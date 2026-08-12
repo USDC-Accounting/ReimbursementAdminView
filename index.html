@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reimbursement Admin</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --gold: #B8860B; --gold-light: #D4A94C; --gold-pale: #FBF4E3; --gold-dark: #8A6508;
+    --ink: #2B2620; --muted: #8A8172; --line: #EAE2D0; --line-soft: #F3EDDF;
+    --surface: #FFFFFF; --bg: #FAF8F3;
+    --danger: #C0392B; --danger-soft: #FBEAE8;
+    --success: #4F7942; --success-soft: #F1F8EC;
+    --pending: #B8860B; --pending-soft: #FBF4E3;
+    --radius: 14px; --radius-sm: 10px;
+    --font: 'Inter','Segoe UI',system-ui,-apple-system,Arial,sans-serif;
+    --mono: 'IBM Plex Mono','SFMono-Regular','Consolas',monospace;
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--ink); padding: 32px 16px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  .top { display:flex; align-items:center; justify-content:space-between; margin-bottom: 22px; flex-wrap: wrap; gap: 12px; }
+  h1 { font-size: 21px; color: var(--gold-dark); }
+  .filters { display:flex; gap:8px; flex-wrap: wrap; }
+  .filter-btn {
+    padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .filter-btn.active { background: var(--gold); color: #fff; border-color: var(--gold); }
+  #loadingMsg, #errorMsg, #emptyMsg { padding: 30px; text-align:center; color: var(--muted); display:none; }
+  #errorMsg { color: var(--danger); }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .card-head {
+    display:flex; align-items:center; justify-content:space-between; padding: 16px 20px;
+    cursor: pointer; gap: 12px; flex-wrap: wrap;
+  }
+  .card-head:hover { background: var(--gold-pale); }
+  .who { display:flex; flex-direction: column; gap: 3px; }
+  .who .name { font-weight: 700; font-size: 15px; }
+  .who .meta { font-size: 12.5px; color: var(--muted); }
+  .right-meta { display:flex; align-items:center; gap: 14px; }
+  .total { font-family: var(--mono); font-weight: 700; font-size: 15px; }
+  .badge { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .badge.Pending { background: var(--pending-soft); color: var(--pending); }
+  .badge.Approved { background: var(--success-soft); color: var(--success); }
+  .badge.Rejected { background: var(--danger-soft); color: var(--danger); }
+  .card-body { display:none; padding: 0 20px 20px; border-top: 1px solid var(--line-soft); }
+  .card-body.open { display:block; }
+  .detail-grid { display:grid; grid-template-columns: repeat(3,1fr); gap: 10px 20px; margin: 16px 0; font-size: 13.5px; }
+  .detail-grid div span { display:block; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px;}
+  table.entries { width:100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  table.entries th { text-align:left; color: var(--gold-dark); font-size: 11px; text-transform: uppercase; padding: 6px 8px; border-bottom: 2px solid var(--gold); }
+  table.entries td { padding: 7px 8px; border-bottom: 1px solid var(--line-soft); }
+  .amt { text-align:right; font-family: var(--mono); }
+  .attachments { display:flex; gap:10px; flex-wrap:wrap; margin: 10px 0; }
+  .attachments img { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+  .attachments a.file-link { font-size: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--gold-dark); text-decoration: none; align-self: center; }
+  .actions { display:flex; gap: 10px; margin-top: 14px; }
+  .btn { padding: 9px 16px; border-radius: var(--radius-sm); border:none; font-size: 13.5px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-approve { background: var(--success); color:#fff; }
+  .btn-reject { background: var(--danger); color:#fff; }
+  .btn-pending { background: var(--line-soft); color: var(--ink); }
+  .sig-img { max-width: 220px; border: 1px solid var(--line); border-radius: 8px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Reimbursement Requests</h1>
+    <div class="filters" id="filters">
+      <button class="filter-btn active" data-filter="All">All</button>
+      <button class="filter-btn" data-filter="Pending">Pending</button>
+      <button class="filter-btn" data-filter="Approved">Approved</button>
+      <button class="filter-btn" data-filter="Rejected">Rejected</button>
+    </div>
+  </div>
+
+  <div id="loadingMsg">Loading submissions…</div>
+  <div id="errorMsg"></div>
+  <div id="emptyMsg">No submissions found.</div>
+  <div id="list"></div>
+</div>
+
+<script>
+  // ============================================================
+  // CONFIG — paste your Apps Script Web App URL and token here
+  // ============================================================
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyLRrup8ZzgNrr-lGbVNVvmmvMoVRl3l9e5Ucljf29_jzzdQKd88dpktYq5cIcXbAY3/exec'; // ends in /exec
+  const TOKEN = 'CHANGE_ME_TO_A_LONG_RANDOM_STRING'; // must match SECRET_TOKEN in Code.gs
+
+  let allSubmissions = [];
+  let currentFilter = 'All';
+
+  const listEl = document.getElementById('list');
+  const loadingMsg = document.getElementById('loadingMsg');
+  const errorMsg = document.getElementById('errorMsg');
+  const emptyMsg = document.getElementById('emptyMsg');
+
+  function fmtDate(d) {
+    if (!d) return '—';
+    try { return new Date(d).toLocaleDateString(); } catch (e) { return d; }
+  }
+
+  function driveDirectLink(url) {
+    // Convert a Drive "view" link into a direct-embeddable image link where possible
+    const match = url && url.match(/\/d\/([^/]+)/);
+    if (match) return 'https://drive.google.com/uc?export=view&id=' + match[1];
+    return url;
+  }
+
+  async function loadSubmissions() {
+    loadingMsg.style.display = 'block';
+    errorMsg.style.display = 'none';
+    emptyMsg.style.display = 'none';
+    listEl.innerHTML = '';
+
+    if (APPS_SCRIPT_URL.includes('https://script.google.com/macros/s/AKfycbyLRrup8ZzgNrr-lGbVNVvmmvMoVRl3l9e5Ucljf29_jzzdQKd88dpktYq5cIcXbAY3/exec')) {
+      loadingMsg.style.display = 'none';
+      errorMsg.textContent = 'Set APPS_SCRIPT_URL and TOKEN at the top of this file first.';
+      errorMsg.style.display = 'block';
+      return;
+    }
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL + '?token=' + encodeURIComponent(TOKEN));
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      allSubmissions = data.submissions || [];
+      render();
+    } catch (err) {
+      console.error(err);
+      errorMsg.textContent = 'Could not load submissions. Check the Apps Script URL/token and that the deployment is set to "Anyone" access.';
+      errorMsg.style.display = 'block';
+    } finally {
+      loadingMsg.style.display = 'none';
+    }
+  }
+
+  function render() {
+    const filtered = currentFilter === 'All'
+      ? allSubmissions
+      : allSubmissions.filter(s => s.status === currentFilter);
+
+    listEl.innerHTML = '';
+    emptyMsg.style.display = filtered.length ? 'none' : 'block';
+
+    filtered.forEach(sub => {
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const entriesRows = (sub.entries || []).map(e => `
+        <tr>
+          <td>${fmtDate(e.date)}</td>
+          <td>${escapeHtml(e.type)}</td>
+          <td>${escapeHtml(e.from)}</td>
+          <td>${escapeHtml(e.to)}</td>
+          <td>${escapeHtml(e.reason)}</td>
+          <td class="amt">₱${Number(e.amount).toFixed(2)}</td>
+        </tr>
+      `).join('');
+
+      const receiptImgs = (sub.receiptUrls || []).map(url => {
+        const direct = driveDirectLink(url);
+        return `<a href="${url}" target="_blank" rel="noopener"><img src="${direct}" alt="Receipt" onerror="this.replaceWith(Object.assign(document.createElement('a'),{href:'${url}',className:'file-link',textContent:'View file',target:'_blank'}))"></a>`;
+      }).join('');
+
+      card.innerHTML = `
+        <div class="card-head">
+          <div class="who">
+            <div class="name">${escapeHtml(sub.employeeName)} <span style="color:var(--muted);font-weight:500;">— ${escapeHtml(sub.department)}</span></div>
+            <div class="meta">${escapeHtml(sub.email)} · Submitted ${fmtDate(sub.dateSubmitted)}</div>
+          </div>
+          <div class="right-meta">
+            <div class="total">₱${Number(sub.grandTotal || 0).toFixed(2)}</div>
+            <span class="badge ${sub.status}">${sub.status}</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="detail-grid">
+            <div><span>Mode of Payment</span>${escapeHtml(sub.modeOfPayment)}</div>
+            <div><span>Account Number</span>${escapeHtml(sub.accountNumber)}</div>
+            <div><span>Submitted</span>${fmtDate(sub.dateSubmitted)}</div>
+          </div>
+
+          <table class="entries">
+            <thead><tr><th>Date</th><th>Type</th><th>From</th><th>To</th><th>Reason</th><th style="text-align:right;">Amount</th></tr></thead>
+            <tbody>${entriesRows || '<tr><td colspan="6" style="color:var(--muted);">No entries</td></tr>'}</tbody>
+          </table>
+
+          ${sub.signatureUrl ? `<div><span style="font-size:11.5px;color:var(--muted);text-transform:uppercase;">Signature</span><br><a href="${sub.signatureUrl}" target="_blank"><img class="sig-img" src="${driveDirectLink(sub.signatureUrl)}" alt="Signature"></a></div>` : ''}
+
+          ${receiptImgs ? `<div style="margin-top:14px;"><span style="font-size:11.5px;color:var(--muted);text-transform:uppercase;">Receipts</span><div class="attachments">${receiptImgs}</div></div>` : ''}
+
+          <div class="actions">
+            <button class="btn btn-approve" data-action="Approved" ${sub.status === 'Approved' ? 'disabled' : ''}>Approve${sub.status === 'Approved' ? 'd' : ''}</button>
+            <button class="btn btn-reject" data-action="Rejected" ${sub.status === 'Rejected' ? 'disabled' : ''}>Reject${sub.status === 'Rejected' ? 'ed' : ''}</button>
+            <button class="btn btn-pending" data-action="Pending" ${sub.status === 'Pending' ? 'disabled' : ''}>Reset to Pending</button>
+          </div>
+        </div>
+      `;
+
+      const head = card.querySelector('.card-head');
+      const body = card.querySelector('.card-body');
+      head.addEventListener('click', () => body.classList.toggle('open'));
+
+      card.querySelectorAll('.actions button').forEach(btn => {
+        btn.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
+          const newStatus = btn.getAttribute('data-action');
+          card.querySelectorAll('.actions button').forEach(b => b.disabled = true);
+          try {
+            await updateStatus(sub.id, newStatus);
+            sub.status = newStatus;
+            render();
+          } catch (err) {
+            alert('Failed to update status. Please try again.');
+            card.querySelectorAll('.actions button').forEach(b => b.disabled = false);
+          }
+        });
+      });
+
+      listEl.appendChild(card);
+    });
+  }
+
+  async function updateStatus(id, status) {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight against Apps Script
+      body: JSON.stringify({ action: 'updateStatus', token: TOKEN, id: id, status: status })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
+
+  function escapeHtml(str) {
+    if (str === undefined || str === null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  document.getElementById('filters').addEventListener('click', (e) => {
+    if (e.target.tagName !== 'BUTTON') return;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+    currentFilter = e.target.getAttribute('data-filter');
+    render();
+  });
+
+  loadSubmissions();
+</script>
+</body>
+</html>
